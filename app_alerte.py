@@ -22,7 +22,7 @@ try:
     env_path = script_dir / '.env'
     load_dotenv(dotenv_path=env_path)
 except Exception:
-    pass # On continue même si ça échoue
+    pass 
 
 # --- CSS POUR LE LOOK MOBILE ---
 st.markdown("""
@@ -33,15 +33,17 @@ st.markdown("""
         height: 3em;
         background-color: #FF4B4B;
         color: white;
+        font-weight: bold;
     }
     .reportview-container .main .block-container {
         padding-top: 2rem;
         padding-bottom: 5rem;
     }
     div[data-testid="stExpander"] {
-        border: 1px solid #ddd;
+        border: 1px solid #e0e0e0;
         border-radius: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        background-color: #f9f9f9;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -52,28 +54,22 @@ def clean_key(key):
         return key.strip().strip("'").strip('"')
     return None
 
-# --- RÉCUPÉRATION DES SECRETS (METHODE ROBUSTE) ---
+# --- RÉCUPÉRATION DES SECRETS ---
 raw_key = None
-
-# 1. Essai via Streamlit Secrets (Cloud)
 try:
     if "GEMINI_API_KEY" in st.secrets:
         raw_key = st.secrets["GEMINI_API_KEY"]
 except:
     pass
 
-# 2. Essai via Environment Variables (Local .env)
 if not raw_key:
     raw_key = os.getenv("GEMINI_API_KEY")
 
-# 3. Fallback : Si vous voulez mettre la clé en dur temporairement, décommentez la ligne ci-dessous
-# raw_key = "AIza..." 
-
-# 4. Interface de secours : Si aucune clé n'est trouvée, on demande à l'utilisateur
+# Interface de secours pour la clé
 if not raw_key:
     with st.sidebar:
         st.warning("⚠️ Clé API non détectée")
-        raw_key = st.text_input("Collez votre clé API Gemini ici pour démarrer :", type="password")
+        raw_key = st.text_input("Collez votre clé API Gemini ici :", type="password")
 
 GEMINI_API_KEY = clean_key(raw_key)
 UTILISER_IA = True
@@ -83,27 +79,24 @@ if UTILISER_IA and GEMINI_API_KEY:
     if not GEMINI_API_KEY.startswith("AIza"):
         model = None
         ia_status = "⚠️ Clé invalide"
-        if GEMINI_API_KEY: # N'affiche l'erreur que si une clé a été tentée
+        if GEMINI_API_KEY:
             st.error("🚨 La clé fournie ne semble pas valide (ne commence pas par 'AIza').")
     else:
         try:
-            # Force la variable pour la librairie Google
             os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
-            
             genai.configure(api_key=GEMINI_API_KEY)
             model = genai.GenerativeModel('gemini-2.5-pro')
             ia_status = "✅ IA Connectée"
         except Exception as e:
             model = None
             ia_status = f"❌ Erreur Config IA"
-            err_msg = str(e)
-            if "API key expired" in err_msg or "API_KEY_INVALID" in err_msg:
-                st.error("🚨 VOTRE CLÉ API A EXPIRÉ. Veuillez en générer une nouvelle.")
+            if "API key expired" in str(e):
+                st.error("🚨 VOTRE CLÉ API A EXPIRÉ.")
             else:
                 st.error(f"Erreur IA : {e}")
 else:
     model = None
-    ia_status = "⚠️ IA en pause (Clé manquante)"
+    ia_status = "⚠️ IA en pause"
 
 # --- FONCTIONS DU SYSTÈME ---
 def check_cross(series_a, series_b, i):
@@ -119,37 +112,36 @@ def check_slope(series, i):
     return 1 if series.iloc[i] > series.iloc[i-1] else -1
 
 def calculate_indicators(df):
-    # 1. EMA
     for span in [5, 8, 10, 21]:
         df[f'EMA_{span}'] = df['Close'].ewm(span=span, adjust=False).mean()
-    # 2. Stoch
+    
     low_min = df['Low'].rolling(window=15).min()
     high_max = df['High'].rolling(window=15).max()
     df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min))
     df['Stoch_D'] = df['Stoch_K'].rolling(window=5).mean()
-    # 3. MACD
+    
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD_Line'] = exp1 - exp2
     df['MACD_Signal'] = df['MACD_Line'].ewm(span=9, adjust=False).mean()
-    # 4. RSI
+    
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
-    # 5. CCI
+    
     tp = (df['High'] + df['Low'] + df['Close']) / 3
     sma_tp = tp.rolling(window=20).mean()
     mean_dev = tp.rolling(window=20).apply(lambda x: np.mean(np.abs(x - np.mean(x))))
     df['CCI'] = (tp - sma_tp) / (0.015 * mean_dev)
-    # 6. OBV
+    
     df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
-    # 7. CMF
+    
     mf_multiplier = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (df['High'] - df['Low'])
     mf_volume = mf_multiplier * df['Volume']
     df['CMF'] = mf_volume.rolling(window=20).sum() / df['Volume'].rolling(window=20).sum()
-    # 8. Aroon
+    
     aroon_window = 14
     df['Aroon_Up'] = df['High'].rolling(window=aroon_window).apply(lambda x: 100 * (np.argmax(x) + 1) / aroon_window)
     df['Aroon_Down'] = df['Low'].rolling(window=aroon_window).apply(lambda x: 100 * (np.argmin(x) + 1) / aroon_window)
@@ -159,10 +151,8 @@ def calculate_indicators(df):
 @st.cache_data(ttl=3600)
 def analyze_market(tickers):
     results = []
-    
     progress_bar = st.progress(0)
     status_text = st.empty()
-    
     total = len(tickers)
     
     for idx, ticker_symbol in enumerate(tickers):
@@ -179,11 +169,10 @@ def analyze_market(tickers):
             current_date = df.index[i].strftime('%Y-%m-%d')
             price = df['Close'].iloc[i]
 
-            # --- LOGIQUE EMA TRIGGER + STOCH FILTER ---
+            # Trigger EMA
             ema_trigger = 0
             ema_details = ""
             ema5 = df['EMA_5']
-            
             for p in [8, 10, 21]:
                 cross = check_cross(ema5, df[f'EMA_{p}'], i)
                 if cross != 0:
@@ -197,14 +186,12 @@ def analyze_market(tickers):
             target_direction = ema_trigger
             direction_str = "ACHAT 🟢" if target_direction == 1 else "VENTE 🔴"
 
-            # Check Stoch
+            # Filter Stoch
             stoch_k = df['Stoch_K'].iloc[i]
             stoch_d = df['Stoch_D'].iloc[i]
             stoch_ok = False
-            
             if target_direction == 1 and stoch_k > stoch_d: stoch_ok = True
             elif target_direction == -1 and stoch_k < stoch_d: stoch_ok = True
-            
             if not stoch_ok: continue
 
             # Confirmations
@@ -228,11 +215,9 @@ def analyze_market(tickers):
                     "price": price,
                     "date": current_date,
                     "signal": direction_str,
-                    "raw_signal": target_direction,
                     "tech_details": tech_details,
                     "confirmations": confirmations
                 })
-                
         except Exception:
             continue
             
@@ -242,7 +227,6 @@ def analyze_market(tickers):
 
 def get_ai_advice(ticker, price, signal, details):
     if not model: return "IA non disponible"
-    
     prompt = f"""
     Agis comme un analyste financier expert.
     ACTIF: {ticker} (Prix: {price})
@@ -258,16 +242,15 @@ def get_ai_advice(ticker, price, signal, details):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        if "API key expired" in str(e):
-             return "⚠️ CLÉ EXPIRÉE. Veuillez mettre à jour votre clé API."
+        if "API key expired" in str(e): return "⚠️ CLÉ EXPIRÉE."
         return f"Erreur IA : {str(e)}"
 
 # --- INTERFACE UTILISATEUR (MOBILE) ---
 
 st.title("📱 Trading Assistant")
-st.caption(f"Stratégie EMA + Stochastique | {ia_status}")
+st.caption(f"Scanner Pro | {ia_status}")
 
-# Liste des tickers (La même que dans votre script)
+# Liste par défaut
 DEFAULT_TICKERS = [
         "BMO.TO", "NA.TO", "RY.TO", "TD.TO", "CP.TO", "CCL-B.TO", "DOL.TO", "EMP-A.TO",
         "X.TO", "IAG.TO", "IFC.TO", "L.TO", "MRU.TO", "QBR-B.TO", "RBA.TO", "QSR.TO",
@@ -281,17 +264,37 @@ DEFAULT_TICKERS = [
         "SHW", "TJX", "UNH", "ZTS", "VTI"
 ]
 
-with st.expander("⚙️ Configuration & Liste"):
-    selected_tickers = st.multiselect("Actions à surveiller", DEFAULT_TICKERS, default=DEFAULT_TICKERS)
+with st.expander("⚙️ Configuration & Liste", expanded=False):
+    st.markdown("### 1. Liste de surveillance")
+    selected_standard = st.multiselect(
+        "Sélectionnez les actions favorites", 
+        DEFAULT_TICKERS, 
+        default=DEFAULT_TICKERS
+    )
+    
+    st.markdown("### 2. Ajouter manuellement")
+    st.markdown("Tapez d'autres symboles (séparés par une virgule).")
+    st.caption("Ex: `TSLA, BTC-USD, SHOP.TO`")
+    custom_input = st.text_input("Nouveaux Tickers", "")
+    
+    # Fusion des listes
+    custom_list = []
+    if custom_input:
+        custom_list = [t.strip().upper() for t in custom_input.split(",") if t.strip()]
+    
+    final_tickers = list(set(selected_standard + custom_list))
+    
+    st.info(f"📊 Total : {len(final_tickers)} actifs à scanner")
+
     
 if st.button("🚀 LANCER L'ANALYSE"):
-    if not selected_tickers:
+    if not final_tickers:
         st.warning("Aucune action sélectionnée.")
     else:
-        results = analyze_market(selected_tickers)
+        results = analyze_market(final_tickers)
         
         if not results:
-            st.info("Aucun signal détecté aujourd'hui. Le marché est calme.")
+            st.info("Aucun signal détecté sur la sélection.")
         else:
             st.success(f"{len(results)} opportunités trouvées !")
             
@@ -315,8 +318,13 @@ if st.button("🚀 LANCER L'ANALYSE"):
                                     st.error(advice)
                                 else:
                                     st.info(advice)
+                    st.divider()
+
+st.markdown("---")
+st.caption("Données Yahoo Finance. Trading risqué.")
                     
                     st.divider()
 
 st.markdown("---")
+
 st.caption("Données fournies par Yahoo Finance. Ceci n'est pas un conseil en investissement.")
