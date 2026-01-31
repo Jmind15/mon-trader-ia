@@ -323,8 +323,5 @@ if st.button("🚀 LANCER L'ANALYSE"):
 st.markdown("---")
 st.caption("Données Yahoo Finance. Trading risqué.")
                     
-                    st.divider()
 
-st.markdown("---")
 
-st.caption("Données fournies par Yahoo Finance. Ceci n'est pas un conseil en investissement.")
