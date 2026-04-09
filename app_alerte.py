@@ -85,7 +85,7 @@ if UTILISER_IA and GEMINI_API_KEY:
         try:
             os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
             genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-pro')
+            model = genai.GenerativeModel('gemini-3.1-pro-preview')
             ia_status = "✅ IA Connectée"
         except Exception as e:
             model = None
