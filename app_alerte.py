@@ -324,59 +324,75 @@ with st.expander("⚙️ Configuration & Liste", expanded=False):
         default=["Main Watchlist"]
     )
     
-    # Fusionner les tickers des catégories sélectionnées
-    selected_standard = []
-    for cat in selected_categories:
-        selected_standard.extend(TICKER_CATEGORIES[cat])
-    
     st.markdown("### 2. Ajouter manuellement")
     st.markdown("Tapez d'autres symboles (séparés par une virgule).")
     st.caption("Ex: `TSLA, BTC-USD, SHOP.TO`")
     custom_input = st.text_input("Nouveaux Tickers", "")
     
-    # Ajout manuel
+    # Préparation des ajouts manuels
     custom_list = []
     if custom_input:
         custom_list = [t.strip().upper() for t in custom_input.split(",") if t.strip()]
-    
-    # Déduplication finale
-    final_tickers = list(set(selected_standard + custom_list))
-    
-    st.info(f"📊 Total : {len(final_tickers)} actifs à scanner")
+        
+    total_tickers = sum([len(TICKER_CATEGORIES[cat]) for cat in selected_categories]) + len(custom_list)
+    st.info(f"📊 Total : {total_tickers} actifs répartis à scanner")
 
     
 if st.button("🚀 LANCER L'ANALYSE"):
-    if not final_tickers:
-        st.warning("Aucune action sélectionnée.")
+    if not selected_categories and not custom_list:
+        st.warning("Aucune action ou catégorie sélectionnée.")
     else:
-        results = analyze_market(final_tickers)
+        # Création d'un dictionnaire des catégories à analyser
+        categories_to_process = {}
+        for cat in selected_categories:
+            categories_to_process[cat] = TICKER_CATEGORIES[cat]
+        if custom_list:
+            categories_to_process["Ajouts Manuels"] = custom_list
         
-        if not results:
-            st.info("Aucun signal détecté sur la sélection.")
-        else:
-            st.success(f"{len(results)} opportunités trouvées !")
+        total_opportunites = 0
+        
+        # On parcourt chaque catégorie séparément
+        for cat_name, cat_tickers in categories_to_process.items():
+            st.markdown(f"## 📂 Catégorie : {cat_name}")
             
-            for res in results:
-                color = "green" if "ACHAT" in res['signal'] else "red"
+            # Déduplication au sein de la catégorie
+            cat_tickers = list(set(cat_tickers))
+            
+            results = analyze_market(cat_tickers)
+            
+            if not results:
+                st.info(f"Aucun signal détecté dans la catégorie {cat_name}.")
+            else:
+                st.success(f"🎯 {len(results)} opportunité(s) trouvée(s) !")
+                total_opportunites += len(results)
                 
-                with st.container():
-                    st.markdown(f"### {res['ticker']} : {res['signal']}")
-                    col1, col2 = st.columns(2)
-                    col1.metric("Prix", f"{res['price']:.2f}")
-                    col2.metric("Confiance", f"{res['confirmations']}/6")
+                for res in results:
+                    color = "green" if "ACHAT" in res['signal'] else "red"
                     
-                    with st.expander("🧠 Analyse IA & Détails"):
-                        st.write("**Indicateurs validés :**")
-                        st.code("\n".join(res['tech_details']))
+                    with st.container():
+                        st.markdown(f"### {res['ticker']} : {res['signal']}")
+                        col1, col2 = st.columns(2)
+                        col1.metric("Prix", f"{res['price']:.2f}")
+                        col2.metric("Confiance", f"{res['confirmations']}/6")
                         
-                        if model:
-                            with st.spinner("L'IA réfléchit..."):
-                                advice = get_ai_advice(res['ticker'], res['price'], res['signal'], res['tech_details'])
-                                if "Erreur" in advice:
-                                    st.error(advice)
-                                else:
-                                    st.info(advice)
-                    st.divider()
+                        with st.expander("🧠 Analyse IA & Détails"):
+                            st.write("**Indicateurs validés :**")
+                            st.code("\n".join(res['tech_details']))
+                            
+                            if model:
+                                with st.spinner("L'IA réfléchit..."):
+                                    advice = get_ai_advice(res['ticker'], res['price'], res['signal'], res['tech_details'])
+                                    if "Erreur" in advice:
+                                        st.error(advice)
+                                    else:
+                                        st.info(advice)
+                        st.divider()
+            
+            st.markdown("<br>", unsafe_allow_html=True) # Espace visuel entre les catégories
+        
+        if total_opportunites > 0:
+            st.balloons()
+            st.markdown(f"### 🎉 Analyse terminée : {total_opportunites} signaux détectés au total !")
 
 st.markdown("---")
 st.caption("Données Yahoo Finance. Trading risqué.")
