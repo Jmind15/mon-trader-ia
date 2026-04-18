@@ -85,6 +85,7 @@ if UTILISER_IA and GEMINI_API_KEY:
         try:
             os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
             genai.configure(api_key=GEMINI_API_KEY)
+            # CORRECTION : gemini-3.1 n'est pas dispo, on utilise 1.5-flash qui est très rapide et stable
             model = genai.GenerativeModel('gemini-3.1-pro-preview')
             ia_status = "✅ IA Connectée"
         except Exception as e:
@@ -250,38 +251,95 @@ def get_ai_advice(ticker, price, signal, details):
 st.title("📱 Trading Assistant")
 st.caption(f"Scanner Pro | {ia_status}")
 
-# Liste par défaut
-DEFAULT_TICKERS = [
-        "BMO.TO", "NA.TO", "RY.TO", "TD.TO", "CP.TO", "CCL-B.TO", "DOL.TO", "EMP-A.TO",
-        "X.TO", "IAG.TO", "IFC.TO", "L.TO", "MRU.TO", "QBR-B.TO", "RBA.TO", "QSR.TO",
-        "STN.TO", "TRI.TO", "TOI.V", "TIH.TO", "WCN.TO",
+# --- DICTIONNAIRE DES CATÉGORIES ---
+TICKER_CATEGORIES = {
+    "Main Watchlist": [
+        "^DJI", "^IXIC", "^GSPC", "^VIX", "AAPL", "AMZN", "MSFT", "GOOG", "META", "TSLA", 
+        "NVDA", "PLTR", "MSTR", "SPY", "QQQ", "TQQQ", "BRK-A", "BTC-USD", "DSG.TO"
+    ],
+    "Futures": [
+        "GC=F", "^VIX", "YM=F", "NQ=F", "ES=F", "ALI=F", "BTC-USD", "HG=F", "CL=F", 
+        "ETH-USD", "NG=F", "PA=F", "PL=F", "QQQ", "SI=F", "SPXU", "SPY", "TMF", "XLC", 
+        "^DJI", "^NDX", "^NYA", "^RUT", "VIXY"
+    ],
+    "Dow Jones Components": [
+        "AAPL", "AMGN", "AXP", "BA", "CAT", "CSCO", "CVX", "GS", "HD", "HON", "IBM", 
+        "INTC", "JNJ", "KO", "JPM", "MCD", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", 
+        "CRM", "VZ", "V", "WBA", "WMT", "DIS", "DOW"
+    ],
+    "Dent USA": [
+        "GWRE", "HEI-A", "ISRG", "MA", "MPWR", "PCOR", "SHW", "TDG", "TYL", "UBER", 
+        "VEEV", "V", "VMC", "TMO", "MSI", "ECL", "DHR", "CSGP", "CDNS", "ASML", "MKL"
+    ],
+    "CAD": [
+        "BMO.TO", "NA.TO", "RY.TO", "TD.TO", "CP.TO", "DOL.TO", "EMP-A.TO", "X.TO",
+        "IAG.TO", "IFC.TO", "L.TO", "MRU.TO", "QBR-B.TO", "RBA.TO", "WCN.TO", "GIB-A.TO",
+        "WSP.TO", "TOI.V", "VNP.TO", "CCL-B.TO", "PHYS.TO", "PSLV.TO", "SPPP.TO", "CIF.TO",
+        "XEC.TO", "ZDB.TO", "PMM.TO", "EQL.TO", "NSCE.TO", "HTB.TO", "TRP.TO", "PPL.TO",
+        "OXY", "EWC", "SHOP.TO"
+    ],
+    "Berkshire Hathaway": [
+        "V", "KO", "AXP", "C", "SNOW", "AON", "OXY", "DHI", "COF", "LEN-B", "NU",
+        "KR", "HPQ", "NVR", "MKL", "GL", "ALLY", "DVA", "JEF", "LPX"
+    ],
+    "COMMODITIES CAD": [
+        "PHYS.TO", "PSLV.TO", "HURA.TO", "U.TO", "HUC.TO", "SPPP.TO", "OXY"
+    ],
+    "COMMODITIES USD": [
+        "GLD", "SLV", "USO", "XLE", "SPPP", "PHYS", "KALU", "OXY", "COP"
+    ],
+    "Cryptos": [
+        "BTC-USD", "ETH-USD", "XRP-USD", "ADA-USD", "XLM-USD", "SOL-USD", "COIN", "MSTR", "BMNR"
+    ],
+    "Pool": [
+        "HUT.TO", "PTM.TO", "HUC.TO", "VDE", "CHOW", "CLS.TO", "ARE.TO", "WSPOF", "STN.TO", 
+        "BDT.TO", "BIP", "BIP-UN.TO", "BAM", "TRP.TO", "AMT", "GEHC", "SHL.DE", "MDT", 
+        "COIN", "MSTR", "EWY", "OVH.PA", "OVHFF", "BMNR"
+    ],
+    "CHF": [
+        "NESN.SW", "BCVN.SW"
+    ],
+    "USD Growth": [
         "AMTM", "AXP", "AMP", "AMGN", "AAPL", "ANET", "AZN", "BX", "CMG", "COST",
-        "CSX", "DKS", "DD", "FIS", "IBM", "J", "KIM", "KR", "LLY", "MRVL", "MA",
-        "META", "MSFT", "NFLX", "NVDA", "ORLY", "ORCL", "PSX", "PG", "Q", "PWR",
-        "DGX", "SHEL", "SO", "TMUS", "TSM", "TXN", "TOL", "TT", "SPY", "B",
+        "CSX", "DKS", "DD", "FIS", "IBM", "MRVL", "MA", "META", "MSFT", "NFLX",
+        "NVDA", "ORLY", "ORCL", "PSX", "PG", "Q", "PWR", "DGX", "SHEL", "SO",
+        "TMUS", "TT", "SPY", "B", "TSLA", "GOOG", "GLD", "SLV", "SPPP", "GEHC",
+        "XAR", "DFEN", "HOOD", "MCO", "BP", "TTE", "DJT", "CME", "AZO", "GGG", "ASML"
+    ],
+    "USD Value": [
         "ADBE", "GOOGL", "ADI", "AZO", "CARR", "CME", "CL", "CPRT", "FDS", "GGG",
-        "HLT", "JNJ", "LIN", "LOW", "MTD", "MCO", "MSCI", "NKE", "OTIS", "PEP",
-        "SHW", "TJX", "UNH", "ZTS", "VTI"
-]
+        "HLT", "JNJ", "LIN", "LOW", "MRVL", "MCO", "MSCI", "NFLX", "NKE", "NVDA",
+        "ORLY", "ORCL", "OTIS", "PEP", "PSX", "PG", "PWR", "DGX", "SHEL", "SHW",
+        "SO", "TSM", "TXN", "TJX", "TOL", "TT", "UNH", "ZTS", "VTI"
+    ]
+}
 
 with st.expander("⚙️ Configuration & Liste", expanded=False):
-    st.markdown("### 1. Liste de surveillance")
-    selected_standard = st.multiselect(
-        "Sélectionnez les actions favorites", 
-        DEFAULT_TICKERS, 
-        default=DEFAULT_TICKERS
+    st.markdown("### 1. Sélection par Catégorie")
+    
+    # L'utilisateur choisit les listes qu'il veut scanner (Main Watchlist par défaut)
+    selected_categories = st.multiselect(
+        "Listes à analyser", 
+        options=list(TICKER_CATEGORIES.keys()), 
+        default=["Main Watchlist"]
     )
+    
+    # Fusionner les tickers des catégories sélectionnées
+    selected_standard = []
+    for cat in selected_categories:
+        selected_standard.extend(TICKER_CATEGORIES[cat])
     
     st.markdown("### 2. Ajouter manuellement")
     st.markdown("Tapez d'autres symboles (séparés par une virgule).")
     st.caption("Ex: `TSLA, BTC-USD, SHOP.TO`")
     custom_input = st.text_input("Nouveaux Tickers", "")
     
-    # Fusion des listes
+    # Ajout manuel
     custom_list = []
     if custom_input:
         custom_list = [t.strip().upper() for t in custom_input.split(",") if t.strip()]
     
+    # Déduplication finale
     final_tickers = list(set(selected_standard + custom_list))
     
     st.info(f"📊 Total : {len(final_tickers)} actifs à scanner")
