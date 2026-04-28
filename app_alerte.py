@@ -86,7 +86,7 @@ if UTILISER_IA and GEMINI_API_KEY:
             os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
             genai.configure(api_key=GEMINI_API_KEY)
             # CORRECTION : gemini-3.1 n'est pas dispo, on utilise 1.5-flash qui est très rapide et stable
-            model = genai.GenerativeModel('gemini-3.1-pro-preview')
+            model = genai.GenerativeModel('gemini-3.1-flash-lite-preview')
             ia_status = "✅ IA Connectée"
         except Exception as e:
             model = None
